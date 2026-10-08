@@ -16,6 +16,8 @@ def test_csv_driven_cscan(tmp_path: Path) -> None:
     assert output.is_file()
     assert details["csv"]["signal_column"] == "Amplitude"
     assert details["cscan"]["signal_min"] == 1
+    assert 0 < details["cscan"]["coverage_ratio"] <= 1
+    assert details["inspection_validation"]["spatial_coordinates_detected"]
 
 
 def test_millimeter_matrix_csv(tmp_path: Path) -> None:

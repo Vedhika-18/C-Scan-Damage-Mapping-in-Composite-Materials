@@ -30,6 +30,10 @@ two numeric coordinate columns, and one numeric signal column. PLY support is
 currently ASCII-only; it is optional when the CSV already contains spatial
 data. The health check is available at `/health`.
 
+Result APIs include `/api/inspections`, metadata JSON, potential-indications
+CSV, and an HTML inspection report. The report preserves the distinction
+between analytical potential indications and validated defects.
+
 ## Production
 
 Install dependencies and run without reload:

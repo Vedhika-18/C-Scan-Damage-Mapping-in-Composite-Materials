@@ -1,14 +1,18 @@
 import shutil
 import uuid
 import os
+import csv
+import io
+import json
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from .database import create_inspection, get_inspection, initialize_database
+from .database import create_inspection, get_inspection, initialize_database, list_inspections
 from .pipeline import generate_inspection
+from .reporting import build_report
 from .storage import download_local, is_remote, public_url, upload_file
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -34,6 +38,11 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/inspections")
+def inspections(limit: int = 50) -> dict:
+    return {"items": list_inspections(limit)}
+
+
 def _save_upload(upload: UploadFile, destination: Path) -> None:
     with destination.open("wb") as handle:
         shutil.copyfileobj(upload.file, handle)
@@ -46,6 +55,7 @@ async def generate_cscan_endpoint(
     surface_image: UploadFile | None = File(None),
     material: str = Form(...),
     thickness: float = Form(...),
+    plate_id: str = Form(""),
 ) -> dict:
     if thickness <= 0:
         raise HTTPException(status_code=422, detail="Thickness must be greater than zero.")
@@ -67,13 +77,15 @@ async def generate_cscan_endpoint(
     cscan_path = folder / "cscan.png"
     try:
         details = generate_inspection(
-            csv_path, cscan_path, ply_path, image_path, material.strip(), thickness
+            csv_path, cscan_path, ply_path, image_path, material.strip(), thickness, plate_id.strip()
         )
         prefix = f"inspections/{result_id}"
         csv_key = upload_file(csv_path, f"{prefix}/{csv_path.name}", "text/csv")
         ply_key = upload_file(ply_path, f"{prefix}/{ply_path.name}", "application/octet-stream") if ply_path else None
         image_key = upload_file(image_path, f"{prefix}/{image_path.name}", "image/*") if image_path else None
         cscan_key = upload_file(cscan_path, f"{prefix}/cscan.png", "image/png")
+        coverage_path = folder / "coverage.png"
+        coverage_key = upload_file(coverage_path, f"{prefix}/coverage.png", "image/png")
         create_inspection(
             {
                 "id": result_id,
@@ -83,6 +95,7 @@ async def generate_cscan_endpoint(
                 "ply_filename": ply_path.name if ply_path else None,
                 "surface_filename": image_path.name if image_path else None,
                 "cscan_key": cscan_key,
+                "coverage_key": coverage_key,
                 "status": "success",
                 "details": details,
             }
@@ -101,6 +114,7 @@ async def generate_cscan_endpoint(
         "surface_image_url": f"/api/results/{result_id}/surface" if image_path else None,
         "details": details,
         "method": "Baseline C-scan visualization generated from uploaded inspection data",
+        "plate_id": details["plate_id"],
     }
 
 
@@ -117,6 +131,21 @@ def get_cscan(result_id: str) -> FileResponse:
     return FileResponse(path, media_type="image/png", filename="cscan.png")
 
 
+@app.get("/api/results/{result_id}/coverage")
+def get_coverage(result_id: str) -> FileResponse:
+    record = get_inspection(result_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found.")
+    key = record["details"]["visualization"]["coverage_file"]
+    object_key = f"inspections/{result_id}/{key}"
+    if is_remote():
+        return RedirectResponse(public_url(object_key))
+    path = download_local(object_key)
+    if path is None:
+        raise HTTPException(status_code=404, detail="Coverage map not found.")
+    return FileResponse(path, media_type="image/png", filename="coverage.png")
+
+
 @app.get("/api/results/{result_id}/surface")
 def get_surface(result_id: str) -> FileResponse:
     record = get_inspection(result_id)
@@ -131,17 +160,62 @@ def get_surface(result_id: str) -> FileResponse:
     if path is None:
         raise HTTPException(status_code=404, detail="Surface image not found.")
     return FileResponse(path)
-    folder = UPLOADS / result_id
-    matches = [path for path in folder.iterdir()] if folder.is_dir() else []
-    image = next(
-        (
-            path
-            for path in matches
-            if path.name != "cscan.png"
-            and path.suffix.lower() in {".jpg", ".jpeg", ".png"}
-        ),
-        None,
+
+
+@app.get("/api/results/{result_id}/metadata")
+def get_metadata(result_id: str, inline: bool = Query(False)) -> Response:
+    record = get_inspection(result_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found.")
+    payload = {
+        "inspection_id": record["id"],
+        "created_at": record["created_at"],
+        "material": record["material"],
+        "thickness_mm": record["thickness_mm"],
+        "csv_filename": record["csv_filename"],
+        "ply_filename": record["ply_filename"],
+        "surface_filename": record["surface_filename"],
+        "status": record["status"],
+        "details": record["details"],
+    }
+    disposition = "inline" if inline else "attachment"
+    return Response(
+        content=json.dumps(payload, indent=2),
+        media_type="application/json",
+        headers={"Content-Disposition": f'{disposition}; filename="inspection-metadata.json"'},
     )
-    if image is None:
-        raise HTTPException(status_code=404, detail="Surface image not found.")
-    return FileResponse(image)
+
+
+@app.get("/api/results/{result_id}/indications.csv")
+def get_indications(result_id: str, inline: bool = Query(False)) -> Response:
+    record = get_inspection(result_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found.")
+    indications = record["details"].get("potential_indications", [])
+    stream = io.StringIO()
+    writer = csv.DictWriter(
+        stream,
+        fieldnames=["region", "x", "y", "area", "length", "width", "signal", "severity"],
+    )
+    writer.writeheader()
+    for index, indication in enumerate(indications, start=1):
+        writer.writerow({"region": f"R{index}", **indication})
+    disposition = "inline" if inline else "attachment"
+    return Response(
+        content=stream.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'{disposition}; filename="potential-indications.csv"'},
+    )
+
+
+@app.get("/api/results/{result_id}/report.html")
+def get_report(result_id: str, inline: bool = Query(False)) -> Response:
+    record = get_inspection(result_id)
+    if record is None:
+        raise HTTPException(status_code=404, detail="Inspection not found.")
+    disposition = "inline" if inline else "attachment"
+    return Response(
+        content=build_report(record),
+        media_type="text/html",
+        headers={"Content-Disposition": f'{disposition}; filename="inspection-report.html"'},
+    )

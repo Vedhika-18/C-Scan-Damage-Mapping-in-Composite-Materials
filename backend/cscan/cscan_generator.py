@@ -13,6 +13,7 @@ def generate_cscan(
     material: str,
     thickness: float,
     grid_size: int = 160,
+    coverage_output_path: str | Path | None = None,
 ) -> dict[str, float | list[int]]:
     if points.shape[0] < 3:
         raise ValueError("At least three inspection points are required.")
@@ -29,6 +30,7 @@ def generate_cscan(
     for row, column in np.argwhere(~np.isfinite(matrix)):
         nearest = finite[np.argmin((finite[:, 0] - row) ** 2 + (finite[:, 1] - column) ** 2)]
         matrix[row, column] = matrix[nearest[0], nearest[1]]
+    coverage = counts / max(float(counts.max()), 1.0)
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -44,8 +46,26 @@ def generate_cscan(
     figure.colorbar(image, ax=axis, label="Inspection signal")
     figure.savefig(output_path, dpi=150)
     plt.close(figure)
+    if coverage_output_path:
+        coverage_figure, coverage_axis = plt.subplots(figsize=(8, 5.5), constrained_layout=True)
+        coverage_image = coverage_axis.imshow(
+            coverage, origin="lower",
+            extent=(float(x.min()), float(x.max()), float(y.min()), float(y.max())),
+            aspect="auto", cmap="magma", vmin=0, vmax=1,
+        )
+        coverage_axis.set(title="Measurement coverage", xlabel="X", ylabel="Y")
+        coverage_figure.colorbar(coverage_image, ax=coverage_axis, label="Relative coverage")
+        coverage_figure.savefig(coverage_output_path, dpi=150)
+        plt.close(coverage_figure)
     return {
         "grid_shape": [int(matrix.shape[0]), int(matrix.shape[1])],
         "signal_min": float(signal.min()),
         "signal_max": float(signal.max()),
+        "bounds": {
+            "x_min": float(x.min()), "x_max": float(x.max()),
+            "y_min": float(y.min()), "y_max": float(y.max()),
+        },
+        "coverage_mean": round(float(coverage.mean()), 4),
+        "coverage_max": round(float(coverage.max()), 4),
+        "coverage_ratio": round(float(np.count_nonzero(counts) / counts.size), 4),
     }

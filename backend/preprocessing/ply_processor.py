@@ -52,6 +52,8 @@ def process_ply(path: str | Path) -> dict[str, Any]:
     return {
         "point_count": int(array.shape[0]),
         "points": array,
+        "properties": [line for line in header if line.startswith("property ")],
+        "sample_points": array[:: max(1, len(array) // 2500)].round(5).tolist(),
         "bounds": {
             "x_min": float(array[:, 0].min()),
             "x_max": float(array[:, 0].max()),

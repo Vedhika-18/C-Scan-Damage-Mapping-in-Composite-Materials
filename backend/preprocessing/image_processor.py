@@ -6,8 +6,8 @@ from PIL import Image
 
 def process_image(path: str | Path) -> dict[str, Any]:
     path = Path(path)
-    if path.suffix.lower() not in {".jpg", ".jpeg", ".png"}:
-        raise ValueError("Surface image must be JPG, JPEG, or PNG.")
+    if path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+        raise ValueError("Surface image must be JPG, JPEG, PNG, or WEBP.")
     try:
         with Image.open(path) as image:
             image.verify()

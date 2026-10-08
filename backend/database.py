@@ -123,3 +123,23 @@ def get_inspection(inspection_id: str) -> dict[str, Any] | None:
     result = dict(row)
     result["details"] = json.loads(result.pop("details_json"))
     return result
+
+
+def list_inspections(limit: int = 50) -> list[dict[str, Any]]:
+    import json
+
+    limit = max(1, min(limit, 200))
+    with _connect() as connection:
+        rows = _execute(
+            connection,
+            "SELECT * FROM inspections ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    inspections = []
+    for row in rows:
+        result = dict(row)
+        details = json.loads(result.pop("details_json"))
+        result["data_quality"] = details.get("data_quality", {}).get("score")
+        result["potential_indications"] = len(details.get("potential_indications", []))
+        inspections.append(result)
+    return inspections

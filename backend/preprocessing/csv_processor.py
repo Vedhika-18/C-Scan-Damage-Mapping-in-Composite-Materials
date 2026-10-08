@@ -71,6 +71,14 @@ def process_csv(path: str | Path) -> dict[str, Any]:
     if len(points) < 3:
         raise ValueError("At least three valid rows with coordinates and a signal are required.")
     array = np.asarray(points, dtype=float)
+    numeric_ranges = {
+        column: [
+            float(values.min()),
+            float(values.max()),
+        ]
+        for column in numeric_columns
+        if (values := _numbers(rows, column)).size
+    }
     return {
         "points": array,
         "row_count": len(rows),
@@ -80,6 +88,18 @@ def process_csv(path: str | Path) -> dict[str, Any]:
         "x_column": x_column,
         "y_column": y_column,
         "signal_column": signal_column,
+        "missing_values": sum(
+            1 for row in rows for column in headers if not str(row.get(column, "")).strip()
+        ),
+        "duplicate_rows": len(rows) - len({tuple(row.get(column, "") for column in headers) for row in rows}),
+        "numeric_ranges": numeric_ranges,
+        "depth_available": _pick_column(headers, ("depth", "z", "time")) is not None,
+        "coordinate_bounds": {
+            "x_min": float(array[:, 0].min()),
+            "x_max": float(array[:, 0].max()),
+            "y_min": float(array[:, 1].min()),
+            "y_max": float(array[:, 1].max()),
+        },
     }
 
 
@@ -108,6 +128,7 @@ def _process_matrix_csv(
     if any(value is None for value in x_values + y_values):
         return None
     points = []
+    missing_values = 0
     for row, y in zip(rows, y_values):
         assert y is not None
         for header, x in zip(headers[1:], x_values):
@@ -115,6 +136,7 @@ def _process_matrix_csv(
             try:
                 signal = float(row[header])
             except (KeyError, TypeError, ValueError):
+                missing_values += 1
                 continue
             if math.isfinite(signal):
                 points.append((x, y, signal))
@@ -129,4 +151,21 @@ def _process_matrix_csv(
         "x_column": "measurement column labels",
         "y_column": "measurement row labels",
         "signal_column": "matrix values",
+        "missing_values": missing_values,
+        "duplicate_rows": len(rows) - len({tuple(row.get(header, "") for header in headers) for row in rows}),
+        "numeric_ranges": {
+            "x": [min(x_values), max(x_values)],
+            "y": [min(y_values), max(y_values)],
+            "signal": [
+                float(min(point[2] for point in points)),
+                float(max(point[2] for point in points)),
+            ],
+        },
+        "depth_available": False,
+        "coordinate_bounds": {
+            "x_min": float(min(x_values)),
+            "x_max": float(max(x_values)),
+            "y_min": float(min(y_values)),
+            "y_max": float(max(y_values)),
+        },
     }
