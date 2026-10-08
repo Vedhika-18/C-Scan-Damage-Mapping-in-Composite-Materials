@@ -1,0 +1,18 @@
+# Local Python environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Local persistence and generated inspection files
+data/*.sqlite3
+outputs/*
+!outputs/.gitkeep
+
+# macOS metadata
+.DS_Store

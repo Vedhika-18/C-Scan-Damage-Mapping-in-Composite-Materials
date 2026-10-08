@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>C-Scan Damage Mapping in Composite Materials</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero"><p class="eyebrow">COMPOSITE MATERIALS INSPECTION</p><h1>C-Scan Damage Mapping<br><span>in Composite Materials</span></h1><p class="subtitle">C-Scan Image Generation for Internal Damage Characterization of Composite Plates</p><p class="hero-note">Transform spatial inspection measurements into clear, plate-specific visual maps for faster damage analysis.</p></header>
+    <section class="card">
+      <form id="scan-form">
+        <label>Upload training CSV <input name="csv_file" type="file" accept=".csv" required></label>
+        <label>Upload training PLY geometry <input name="ply_file" type="file" accept=".ply"></label>
+        <label>Surface image <input name="surface_image" type="file" accept=".jpg,.jpeg,.png"></label>
+        <div class="row"><label>Material <select name="material"><option>CFRP</option><option>Aluminium</option><option>Composite</option><option>Titanium</option><option>Steel</option><option>Other</option></select></label><label>Thickness (mm) <input name="thickness" type="number" min="0.01" step="0.01" required value="3"></label></div>
+        <button type="submit">Generate C-scan</button>
+      </form>
+      <p id="status" role="status"></p>
+    </section>
+    <section id="result" class="card hidden"><div class="result-head"><div><p class="eyebrow">INSPECTION RESULT</p><h2>Plate scan ready</h2></div><a id="download" class="button" download="cscan.png">Download C-scan</a></div><div class="images"><figure id="surface-wrap" class="hidden"><figcaption>Surface image</figcaption><img id="surface" alt="Uploaded plate surface"></figure><figure><figcaption>Generated C-scan</figcaption><img id="cscan" alt="Generated C-scan"></figure></div><dl><div><dt>Material</dt><dd id="out-material"></dd></div><div><dt>Thickness</dt><dd id="out-thickness"></dd></div><div><dt>Method</dt><dd id="out-method"></dd></div><div><dt>Mapped signal</dt><dd id="out-signal"></dd></div></dl></section>
+  </main>
+  <script src="/static/app.js"></script>
+</body>
+</html>
